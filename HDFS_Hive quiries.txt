@@ -1,0 +1,210 @@
+-- Step 1: Create a new database and use it
+
+CREATE DATABASE IF NOT EXISTS project;
+USE project;
+
+-- Create the table
+
+CREATE TABLE purchases (
+CID STRING,
+TID STRING,
+Gender STRING,
+Age_Group STRING,
+Purchase_Date TIMESTAMP,
+Product_Category STRING,
+Discount_Availed STRING,
+Discount_Name STRING,
+Discount_Amount_INR DOUBLE,
+Gross_Amount DOUBLE,
+Net_Amount DOUBLE,
+Purchase_Method STRING,
+Location STRING
+)
+USING CSV
+OPTIONS (
+path '/FileStore/tables/project1_df.csv',
+header 'true',
+inferSchema 'true
+);
+SELECT * FROM purchases LIMIT 50;
+
+Preprocessing:
+
+-- Step 4.1: Remove rows with nulls in critical columns
+
+CREATE TABLE purchases_cleaned AS
+SELECT *
+FROM purchases
+WHERE CID IS NOT NULL
+AND TID IS NOT NULL
+AND Net_Amount IS NOT NULL;
+-- Step 4.1: Remove rows with nulls in critical columns
+select * from purchases_cleaned;
+-- Step 4.2: Remove duplicate rows
+CREATE TABLE purchases_no_duplicates AS
+SELECT DISTINCT *
+FROM purchases_cleaned;
+
+-- Step 4.3: Standardize Gender values
+
+CREATE TABLE purchases_gender_cleaned AS
+SELECT *,
+CASE
+WHEN LOWER(Gender) IN ('m', 'male') THEN 'Male'
+WHEN LOWER(Gender) IN ('f', 'female') THEN 'Female'
+ELSE 'Other'
+END AS Standardized_Gender
+FROM purchases_no_duplicates;
+
+-- Step 4.3: Standardize Location values
+
+CREATE TABLE purchases_location_cleaned AS
+SELECT *,
+UPPER(Location) AS Standardized_Location
+FROM purchases_gender_cleaned;
+
+-- Step 4.4: Remove extreme values in Net_Amount
+
+CREATE TABLE purchases_outlier_removed AS
+SELECT *
+FROM purchases_location_cleaned
+WHERE Net_Amount BETWEEN 0 AND 1000000; -- Replace with appropriate thresholds
+
+-- Step 4.5: Extract Year and Month from Purchase_Date
+
+CREATE TABLE purchases_date_features AS
+SELECT *,
+YEAR(Purchase_Date) AS Purchase_Year,
+MONTH(Purchase_Date) AS Purchase_Month
+FROM purchases_outlier_removed;
+
+-- Step 4.6: Calculate Discount Percentage
+
+CREATE TABLE purchases_discount_calculated AS
+SELECT *,
+CASE
+WHEN Gross_Amount > 0 THEN (Discount_Amount_INR / Gross_Amount) * 100
+ELSE 0
+END AS Discount_Percentage
+FROM purchases_date_features;
+
+-- Step 4.7: Create the final cleaned and processed table
+
+CREATE TABLE purchases_final AS
+SELECT
+CID,
+TID,
+Standardized_Gender AS Gender,
+Age_Group
+Purchase_Date,
+Purchase_Year,
+Purchase_Month,
+Product_Category,
+Discount_Availed,
+Discount_Name,
+Discount_Amount_INR,
+Discount_Percentage,
+Gross_Amount,
+Net_Amount,
+Purchase_Method,
+Standardized_Location AS Location
+FROM purchases_discount_calculated
+
+Here we performed some analysis :
+
+Total Sales:
+SELECT SUM(Net_Amount) AS Total_Sales FROM purchases_final;
+
+Total Discount Given:
+SELECT SUM(Discount_Amount_INR) AS Total_Discount_Given FROM
+purchases_final;
+
+Customer Count:
+SELECT COUNT(DISTINCT CID) AS Customer_Count FROM purchases_final;
+
+Sales by Product Category:
+SELECT
+Product_Category,
+SUM(Net_Amount) AS Total_Sales
+FROM purchases_final
+GROUP BY Product_Category;
+
+Sales by Gender:
+SELECT
+Gender,
+SUM(Net_Amount) AS Total_Sales
+FROM purchases_final
+GROUP BY Gender;
+
+Average Discount Amount:
+SELECT AVG(Discount_Amount_INR) AS Average_Discount_Amount FROM
+purchases WHERE Discount_Availed = 'Yes';
+
+Sales by Location:
+SELECT Location, SUM(Net_Amount) AS Total_Sales FROM purchases GROUP
+BY Location;
+
+Top Selling Products:
+SELECT Product_Category, SUM(Net_Amount) AS Total_Sales FROM purchases
+GROUP BY Product_Category ORDER BY Total_Sales DESC LIMIT 10;
+
+Top Product Category by Year:
+WITH Category_Count AS (
+SELECT YEAR(Purchase_Date) AS Year,
+Product_Category,
+COUNT(*) AS Purchase_Count
+FROM purchases
+GROUP BY YEAR(Purchase_Date), Product_Category
+),
+Top_Category AS (
+SELECT Year,
+Product_Category,
+Purchase_Count,
+RANK() OVER (PARTITION BY Year ORDER BY Purchase_Count DESC) AS rank
+FROM Category_Count
+)
+SELECT Year,
+Product_Category,
+Purchase_Count
+FROM Top_Category
+WHERE rank = 1;
+
+Total Sales by Location:
+SELECT Location,
+SUM(Net_Amount) AS Total_Sales
+FROM purchases
+GROUP BY Location
+ORDER BY Total_Sales DESC;
+
+Top Product Categories by Location:
+SELECT Location,
+Product_Category,
+COUNT(*) AS Purchase_Count
+FROM purchases
+GROUP BY Location, Product_Category
+ORDER BY Location, Purchase_Count DESC;
+
+Total Sales by Purchase Method:
+SELECT
+Purchase_Method,
+ROUND(SUM(Net_Amount), 2) AS Total_Sales
+FROM purchases
+GROUP BY Purchase_Method
+ORDER BY Total_Sales DESC;
+
+in which city more sales has happened:
+SELECT
+Location,
+SUM(Net_Amount) AS Total_Sales
+FROM purchases
+GROUP BY Location
+ORDER BY Total_Sales DESC
+LIMIT 5;
+
+Customer Age Group Analysis: Sales Contribution
+SELECT
+Age_Group,
+SUM(Net_Amount) AS Total_Sales
+FROM purchases
+GROUP BY Age_Group
+ORDER BY Total_Sales DESC;
