@@ -1,0 +1,111 @@
+-- Step 1: Create a new database and use it
+
+CREATE DATABASE IF NOT EXISTS project;
+USE project;
+
+-- Create the table
+
+CREATE TABLE purchases (
+CID STRING,
+TID STRING,
+Gender STRING,
+Age_Group STRING,
+Purchase_Date TIMESTAMP,
+Product_Category STRING,
+Discount_Availed STRING,
+Discount_Name STRING,
+Discount_Amount_INR DOUBLE,
+Gross_Amount DOUBLE,
+Net_Amount DOUBLE,
+Purchase_Method STRING,
+Location STRING
+)
+USING CSV
+OPTIONS (
+path '/FileStore/tables/project1_df.csv',
+header 'true',
+inferSchema 'true
+);
+SELECT * FROM purchases LIMIT 50;
+
+Preprocessing:
+
+-- Step 4.1: Remove rows with nulls in critical columns
+
+CREATE TABLE purchases_cleaned AS
+SELECT *
+FROM purchases
+WHERE CID IS NOT NULL
+AND TID IS NOT NULL
+AND Net_Amount IS NOT NULL;
+-- Step 4.1: Remove rows with nulls in critical columns
+select * from purchases_cleaned;
+-- Step 4.2: Remove duplicate rows
+CREATE TABLE purchases_no_duplicates AS
+SELECT DISTINCT *
+FROM purchases_cleaned;
+
+-- Step 4.3: Standardize Gender values
+
+CREATE TABLE purchases_gender_cleaned AS
+SELECT *,
+CASE
+WHEN LOWER(Gender) IN ('m', 'male') THEN 'Male'
+WHEN LOWER(Gender) IN ('f', 'female') THEN 'Female'
+ELSE 'Other'
+END AS Standardized_Gender
+FROM purchases_no_duplicates;
+
+-- Step 4.3: Standardize Location values
+
+CREATE TABLE purchases_location_cleaned AS
+SELECT *,
+UPPER(Location) AS Standardized_Location
+FROM purchases_gender_cleaned;
+
+-- Step 4.4: Remove extreme values in Net_Amount
+
+CREATE TABLE purchases_outlier_removed AS
+SELECT *
+FROM purchases_location_cleaned
+WHERE Net_Amount BETWEEN 0 AND 1000000; -- Replace with appropriate thresholds
+
+-- Step 4.5: Extract Year and Month from Purchase_Date
+
+CREATE TABLE purchases_date_features AS
+SELECT *,
+YEAR(Purchase_Date) AS Purchase_Year,
+MONTH(Purchase_Date) AS Purchase_Month
+FROM purchases_outlier_removed;
+
+-- Step 4.6: Calculate Discount Percentage
+
+CREATE TABLE purchases_discount_calculated AS
+SELECT *,
+CASE
+WHEN Gross_Amount > 0 THEN (Discount_Amount_INR / Gross_Amount) * 100
+ELSE 0
+END AS Discount_Percentage
+FROM purchases_date_features;
+
+-- Step 4.7: Create the final cleaned and processed table
+
+CREATE TABLE purchases_final AS
+SELECT
+CID,
+TID,
+Standardized_Gender AS Gender,
+Age_Group
+Purchase_Date,
+Purchase_Year,
+Purchase_Month,
+Product_Category,
+Discount_Availed,
+Discount_Name,
+Discount_Amount_INR,
+Discount_Percentage,
+Gross_Amount,
+Net_Amount,
+Purchase_Method,
+Standardized_Location AS Location
+FROM purchases_discount_calculated
